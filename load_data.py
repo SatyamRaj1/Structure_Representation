@@ -9,7 +9,7 @@ from torchtext import data
 from torchtext import datasets
 #from torchtext.vocab import Vectors, GloVe
 
-def load_dataset(test_sen=None, batch_size=32):
+def load_dataset(file_path_train='toxicbias_train_aug.csv', file_path_test='toxicbias_test_aug.csv', batch_size=32):
     
     """
     tokenizer : Breaks sentences into a list of words. If sequential=False, no tokenization is applied
@@ -26,7 +26,7 @@ def load_dataset(test_sen=None, batch_size=32):
     
     """
     
-    def load_dataset(file_path_train='toxicbias_train_aug.csv', file_path_test='toxicbias_test_aug.csv', batch_size=32):
+    
     # Load data from CSV
     df_train = pd.read_csv(file_path_train)
     df_test = pd.read_csv(file_path_test)
