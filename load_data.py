@@ -26,24 +26,69 @@ def load_dataset(test_sen=None, batch_size=32):
     
     """
     
-    tokenize = lambda x: x.split()
-    TEXT = data.Field(sequential=True, tokenize=tokenize, lower=True, include_lengths=True, batch_first=True, fix_length=200)
-    LABEL = data.LabelField()
-    train_data, test_data = datasets.IMDB.splits(TEXT, LABEL)
-    TEXT.build_vocab(train_data, vectors="glove.6B.300d")
+    def load_dataset(file_path_train='toxicbias_train_aug.csv', file_path_test='toxicbias_test_aug.csv', batch_size=32):
+    # Load data from CSV
+    df_train = pd.read_csv(file_path_train)
+    df_test = pd.read_csv(file_path_test)
+
+    # Select only the necessary columns and process the 'bias' column
+    df_train = df_train[['comment_text', 'bias']]
+    df_test = df_test[['comment_text', 'bias']]
+    df_train['bias'] = df_train['bias'].apply(lambda x: 1 if x == 'bias' else 0)
+    df_test['bias'] = df_test['bias'].apply(lambda x: 1 if x == 'bias' else 0)
+
+    # Save processed CSV (for torchtext)
+    train_csv_path = "processed_train.csv"
+    test_csv_path = "processed_test.csv"
+    df_train.to_csv(train_csv_path, index=False)
+    df_test.to_csv(test_csv_path, index=False)
+
+    # Tokenizer from transformers
+    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+
+    # Define preprocessing pipeline
+    def tokenize_and_cut(sentence):
+        tokens = tokenizer.tokenize(sentence)
+        tokens = tokens[:198]  # Reduce length by 2 to account for special tokens
+        return tokens
+
+    TEXT = Field(sequential=True,
+                 use_vocab=False,
+                 tokenize=tokenize_and_cut,
+                 preprocessing=tokenizer.convert_tokens_to_ids,
+                 init_token=tokenizer.cls_token_id,
+                 eos_token=tokenizer.sep_token_id,
+                 pad_token=tokenizer.pad_token_id,
+                 unk_token=tokenizer.unk_token_id,
+                 include_lengths=True,
+                 batch_first=True)
+
+    LABEL = LabelField(dtype=torch.float)
+
+    # Define fields mapping from CSV to fields
+    fields = {'comment_text': ('text', TEXT), 'bias': ('label', LABEL)}
+
+    # Create dataset using the paths to the CSV files
+    train_data, test_data = TabularDataset.splits(
+                                path='',
+                                train=train_csv_path,
+                                test=test_csv_path,
+                                format='csv',
+                                fields=fields)
+
+    # Build vocabulary for labels
     LABEL.build_vocab(train_data)
 
-    word_embeddings = TEXT.vocab.vectors
-    print ("Length of Text Vocabulary: " + str(len(TEXT.vocab)))
-    print ("Vector size of Text Vocabulary: ", TEXT.vocab.vectors.size())
-    print ("Label Length: " + str(len(LABEL.vocab)))
+    # Print the outputs
+    print("Length of Text Vocabulary: " + str(tokenizer.vocab_size))
+    print("Label Length: " + str(len(LABEL.vocab)))
 
-    train_data, valid_data = train_data.split() # Further splitting of training_data to create new training_data & validation_data
-    train_iter, valid_iter, test_iter = data.BucketIterator.splits((train_data, valid_data, test_data), batch_size=batch_size, sort_key=lambda x: len(x.text), repeat=False, shuffle=True)
+    # Create iterators
+    train_iter, test_iter = BucketIterator.splits(
+        (train_data, test_data),
+        batch_size=batch_size,
+        sort_within_batch=True,
+        sort_key=lambda x: len(x.text))
 
-    '''Alternatively we can also use the default configurations'''
-    # train_iter, test_iter = datasets.IMDB.iters(batch_size=32)
+    return TEXT, tokenizer.vocab_size, None, train_iter, None, test_iter
 
-    vocab_size = len(TEXT.vocab)
-
-    return TEXT, vocab_size, word_embeddings, train_iter, valid_iter, test_iter
